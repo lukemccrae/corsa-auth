@@ -8,7 +8,9 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "deploy": "yarn && sh ./build_lambdas.sh && yarn cdk deploy --profile lukemccrae"
+
   },
   "devDependencies": {
     "@types/jest": "^29.5.4",
