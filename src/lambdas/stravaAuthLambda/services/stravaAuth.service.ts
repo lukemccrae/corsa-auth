@@ -2,13 +2,18 @@ import {
   GetSecretValueCommand,
   SecretsManagerClient
 } from '@aws-sdk/client-secrets-manager';
-import { httpClient } from '../../clients/httpClient';
+import { AuthResponse } from '../../../types';
+import jwt = require('jsonwebtoken');
 
 export const stravaAuth = async (authCode: string): Promise<any> => {
   try {
     const client = new SecretsManagerClient({ region: 'us-east-1' });
 
-    const secretNames = ['STRAVA_CLIENT_SECRET', 'STRAVA_CLIENT_ID'];
+    const secretNames = [
+      'STRAVA_CLIENT_SECRET',
+      'STRAVA_CLIENT_ID',
+      'JWT_SECRET_KEY'
+    ];
     const secrets: { [key: string]: string } = {}; // Tell TS that the secrets obj will have a string key/value
 
     // confusing pattern to retrieve multiple secrets defined in secretNames
@@ -37,13 +42,16 @@ export const stravaAuth = async (authCode: string): Promise<any> => {
       })
     });
 
-    const authResponse = await Promise.resolve(response.json());
+    const authResponse: AuthResponse = await Promise.resolve(response.json()); //TODO is this best?
+    const jwt = await generateJwt(authResponse, secrets['JWT_SECRET_KEY']);
     return {
       statusCode: 200,
       headers: {
-        ContentType: 'application/json'
+        ContentType: 'application/json',
+        'Access-Control-Allow-Origin':
+          'https://8882-190-129-180-114.ngrok-free.app' // Specify the allowed origin here
       },
-      body: JSON.stringify(authResponse)
+      body: JSON.stringify({ access_token: jwt })
     };
   } catch (e) {
     console.log(e);
@@ -55,4 +63,12 @@ export const stravaAuth = async (authCode: string): Promise<any> => {
       body: 'Auth request failed'
     };
   }
+};
+
+export const generateJwt = async (
+  authResponse: AuthResponse,
+  secret: string
+) => {
+  const token = jwt.sign(authResponse, secret);
+  return token;
 };
