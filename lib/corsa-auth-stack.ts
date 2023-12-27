@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as apiGateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { type Construct } from 'constructs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
@@ -14,19 +15,36 @@ export class CorsaAuthServerStack extends cdk.Stack {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
     });
 
+    // Create a DynamoDB table for storing metadata for geoJSON track
+    const sessionManagementTable = new dynamodb.Table(
+      this,
+      'SessionManagementTable',
+      {
+        partitionKey: {
+          name: 'UserId',
+          type: dynamodb.AttributeType.NUMBER
+        }
+      }
+    );
+
     // Create an AWS Lambda function
     const authLambda = new lambda.Function(this, 'corsaAuthLambda', {
       runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('src/lambdas/stravaAuthLambda/dist'),
       role: authLambdaRole,
-      timeout: cdk.Duration.seconds(10)
+      timeout: cdk.Duration.seconds(10),
+      environment: {
+        SESSION_MANAGEMENT_TABLE_NAME: sessionManagementTable.tableName
+      }
     });
+
+    sessionManagementTable.grantReadWriteData(authLambda);
 
     // Create an API Gateway REST API
     const api = new apiGateway.RestApi(this, 'CorsaAuthApi', {
       defaultCorsPreflightOptions: {
-        allowOrigins: ['https://8882-190-129-180-114.ngrok-free.app'],
+        allowOrigins: ['https://corsa-frontend-next.vercel.app'],
         allowMethods: apiGateway.Cors.ALL_METHODS
       }
     });
@@ -42,13 +60,6 @@ export class CorsaAuthServerStack extends cdk.Stack {
       name: 'STRAVA_CLIENT_ID',
       secretString: JSON.stringify({
         STRAVA_CLIENT_ID: ''
-      })
-    });
-
-    new secretsmanager.CfnSecret(this, 'JWT_SECRET_KEY', {
-      name: 'JWT_SECRET_KEY',
-      secretString: JSON.stringify({
-        JWT_SECRET_KEY: ''
       })
     });
 
