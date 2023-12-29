@@ -10,6 +10,8 @@ import {
   UpdateItemCommand
 } from '@aws-sdk/client-dynamodb';
 
+import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
+
 const retrieveSecrets = async (secretNames: string[]) => {
   const secrets: { [key: string]: string } = {}; // Tell TS that the secrets obj will have a string key/value
   const client = new SecretsManagerClient({ region: 'us-east-1' });
@@ -29,10 +31,24 @@ const retrieveSecrets = async (secretNames: string[]) => {
   return secrets;
 };
 
-export const stravaUserDetails = async (args: {
-  userId: number;
-  access_token: string;
-}) => {
+export const stravaUserDetails = async (args: { userId: string }) => {
+  // unencryt userId
+  const secrets = await retrieveSecrets(['ENCRYPTION_KEY', 'IV_HEX']);
+
+  const decryptData = (encryptedData: string) => {
+    const decipher = createDecipheriv(
+      'aes-256-cbc',
+      Buffer.from(secrets['ENCRYPTION_KEY'], 'hex'),
+      Buffer.from(secrets['IV_HEX'], 'hex')
+    );
+
+    let decrypted = decipher.update(encryptedData, 'hex', 'utf-8');
+    decrypted += decipher.final('utf-8');
+
+    return decrypted;
+  };
+  const userId = decryptData(args.userId);
+
   // return user details
   const dynamoClient = new DynamoDBClient({ region: 'us-east-1' });
 
@@ -40,17 +56,15 @@ export const stravaUserDetails = async (args: {
     TableName: process.env.SESSION_MANAGEMENT_TABLE_NAME,
     KeyConditionExpression: 'UserId = :userId',
     ExpressionAttributeValues: {
-      ':userId': { N: String(args.userId) }
+      ':userId': { N: String(userId) }
     }
   });
   const queryResult = await dynamoClient.send(queryCommand);
-  console.log(JSON.stringify(queryResult), '<< queryResult');
 
   if (!queryResult.Items)
     throw new Error('There was a problem retrieving user data');
 
   const { AccessToken, UserId, Athlete, ExpiresAt } = queryResult.Items[0];
-  console.log(AccessToken, '<< AccessToken');
 
   if (!Athlete.M)
     throw new Error('There was a problem retrieving Athlete data');
@@ -60,7 +74,8 @@ export const stravaUserDetails = async (args: {
     headers: {
       ContentType: 'application/json',
       // 'Access-Control-Allow-Origin': 'https://58f8-70-59-19-22.ngrok-free.app'
-      'Access-Control-Allow-Origin': 'https://corsa-frontend-next.vercel.app'
+      // 'Access-Control-Allow-Origin': 'https://corsa-frontend-next.vercel.app'
+      'Access-Control-Allow-Origin': '*'
     },
     body: JSON.stringify({
       access_token: AccessToken.S,
@@ -153,10 +168,14 @@ export const stravaAuthRefresh = async (args: {
           ContentType: 'application/json',
           // 'Access-Control-Allow-Origin': 'https://58f8-70-59-19-22.ngrok-free.app'
           'Access-Control-Allow-Origin':
-            'https://corsa-frontend-next.vercel.app'
+            // 'https://corsa-frontend-next.vercel.app'
+            '*'
         },
         body: JSON.stringify({
-          access_token: res.access_token
+          access_token: res.access_token,
+          userId: res.userId,
+          expires_at: res.expires_at,
+          profile: res.profile
         })
       };
     } else {
@@ -197,7 +216,9 @@ export const stravaRegister = async (args: {
   try {
     const secrets = await retrieveSecrets([
       'STRAVA_CLIENT_SECRET',
-      'STRAVA_CLIENT_ID'
+      'STRAVA_CLIENT_ID',
+      'ENCRYPTION_KEY',
+      'IV_HEX'
     ]);
 
     const response = await fetch('https://www.strava.com/oauth/token', {
@@ -238,6 +259,20 @@ export const stravaRegister = async (args: {
 
     await dynamoClient.send(command);
 
+    // encyrpt userId for storage in frontend
+    const cipher = createCipheriv(
+      'aes-256-cbc',
+      Buffer.from(secrets['ENCRYPTION_KEY'], 'hex'),
+      Buffer.from(secrets['IV_HEX'], 'hex')
+    );
+
+    let encryptedUserId = cipher.update(
+      String(authResponse.athlete.id),
+      'utf-8',
+      'hex'
+    );
+    encryptedUserId += cipher.final('hex');
+
     return {
       statusCode: 200,
       headers: {
@@ -245,9 +280,7 @@ export const stravaRegister = async (args: {
         'Access-Control-Allow-Origin': 'https://corsa-frontend-next.vercel.app' // Specify the allowed origin here
       },
       body: JSON.stringify({
-        access_token: authResponse.access_token,
-        userId: authResponse.athlete.id,
-        expiresAt: authResponse.expires_at,
+        userId: encryptedUserId,
         profile: authResponse.athlete.profile
       })
     };

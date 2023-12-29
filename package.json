@@ -25,6 +25,7 @@
     "@types/jsonwebtoken": "^9.0.4",
     "aws-cdk-lib": "2.96.2",
     "constructs": "^10.0.0",
+    "crypto": "^1.0.1",
     "jsonwebtoken": "^9.0.2",
     "source-map-support": "^0.5.21"
   }

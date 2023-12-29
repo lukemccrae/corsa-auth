@@ -44,7 +44,8 @@ export class CorsaAuthServerStack extends cdk.Stack {
     // Create an API Gateway REST API
     const api = new apiGateway.RestApi(this, 'CorsaAuthApi', {
       defaultCorsPreflightOptions: {
-        allowOrigins: ['https://corsa-frontend-next.vercel.app'],
+        allowOrigins: ['*'],
+        // allowOrigins: ['https://corsa-frontend-next.vercel.app'],
         allowMethods: apiGateway.Cors.ALL_METHODS
       }
     });
@@ -60,6 +61,20 @@ export class CorsaAuthServerStack extends cdk.Stack {
       name: 'STRAVA_CLIENT_ID',
       secretString: JSON.stringify({
         STRAVA_CLIENT_ID: ''
+      })
+    });
+
+    new secretsmanager.CfnSecret(this, 'IV_HEX', {
+      name: 'IV_HEX',
+      secretString: JSON.stringify({
+        IV_HEX: ''
+      })
+    });
+
+    new secretsmanager.CfnSecret(this, 'ENCRYPTION_KEY', {
+      name: 'ENCRYPTION_KEY',
+      secretString: JSON.stringify({
+        ENCRYPTION_KEY: ''
       })
     });
 
